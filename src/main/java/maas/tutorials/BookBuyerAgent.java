@@ -59,26 +59,36 @@ public class BookBuyerAgent extends Agent {
 			
 			}	
 		}
-		DFAgentDescription template = new DFAgentDescription();
+		
+		DFAgentDescription dfd = new DFAgentDescription();
+		dfd.setName(getAID());
 		ServiceDescription sd = new ServiceDescription();
-		sd.setType("book-selling");
-		template.addServices(sd);
+		sd.setType("book-buying");
+		sd.setName("JADE-book-trading");
+		dfd.addServices(sd);
 		try {
-			DFAgentDescription[] result = DFService.search(myAgent, template);
-			sellerAgents = new AID[result.length];
-			for (int i = 0; i < result.length; ++i) {
-				sellerAgents[i] = result[i].getName();
-			}
+			DFService.register(this, dfd);
 		}
 		catch (FIPAException fe) {
 			fe.printStackTrace();
 		}
+
 		
-		
+		for(String booktitle : BookTitle) {
 			addBehaviour(new TickerBehaviour(this, 60000) {
 				protected void onTick() {
+			
+				System.out.println(getAID().getLocalName()+"is trying to buy"+booktitle);
 					// Update the list of seller agents add if and 
-					if() {
+					if(books_bought.contains(booktitle)) {
+						System.out.println("Agent"+getAID().getLocalName()+"has purchased"+booktitle);
+						System.out.println();
+						System.out.println(books_bought);
+						if(books_bought.size()== max_books) {
+							System.out.println("Agent "+getAID().getLocalName()+"has bought"+books_bought.size()+"copies");
+							doDelete();
+						
+					}
 					stop();
 					}
 					else {
@@ -96,57 +106,39 @@ public class BookBuyerAgent extends Agent {
 						catch (FIPAException fe) {
 							fe.printStackTrace();
 						}
-						
-						
-//						
-//						System.out.println("No book available");
-//						doDelete();
-//					}
-//					try {
-//						Thread.sleep(3000);
-//					} catch (InterruptedException e) {
-//						//e.printStackTrace();
-//					}
-//					addBehaviour(new shutdown());
-
-					// Perform the request
 					myAgent.addBehaviour(new RequestPerformer(booktitle));
 				}
 				}
 			} );
 		}
-
+	}
+	// ************************************************************
 	protected void takeDown() {
+		try {
+			DFService.deregister(this);
+		}
+		catch (FIPAException fe) {
+			fe.printStackTrace();
+		}
 		System.out.println(getAID().getLocalName() + ": Terminating.");
 	}
 
-	// Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
-	private class shutdown extends OneShotBehaviour{
-		public void action() {
-			ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
-			Codec codec = new SLCodec();
-			myAgent.getContentManager().registerLanguage(codec);
-			myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
-			shutdownMessage.addReceiver(myAgent.getAMS());
-			shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
-			shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
-			try {
-				myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
-				myAgent.send(shutdownMessage);
-			}
-			catch (Exception e) {
-				// LOGGER.error(e);
-			}
-
-		}
-	}
-
+//*****************************************************************************
+	
 	private class RequestPerformer extends Behaviour {
+		
 		private AID bestSeller; // The agent who provides the best offer
 		private int bestPrice; // The best offered price
 		private int repliesCnt = 0; // The counter of replies from seller agents
 		private MessageTemplate mt; // The template to receive replies
 		private int step = 0;
+		private String booktitle;
+		
+
+		public RequestPerformer(String booktitle){
+			this.booktitle = booktitle;
+		}
+			
 		public void action() {
 			switch (step) {
 			case 0:
@@ -155,15 +147,17 @@ public class BookBuyerAgent extends Agent {
 				for (int i = 0; i < sellerAgents.length; ++i) {
 					cfp.addReceiver(sellerAgents[i]);
 				}
-				cfp.setContent(BookTitle);
+				cfp.setContent(booktitle);
 				cfp.setConversationId("book-trade");
 				cfp.setReplyWith("cfp"+System.currentTimeMillis()); // Unique value
 				myAgent.send(cfp);
 				// Prepare the template to get proposals
 				mt = MessageTemplate.and(MessageTemplate.MatchConversationId("book-trade"),
 						MessageTemplate.MatchInReplyTo(cfp.getReplyWith()));
+				
 				step = 1;
 				break;
+				
 			case 1:
 				// Receive all proposals/refusals from seller agents
 				ACLMessage reply = myAgent.receive(mt);
@@ -192,7 +186,7 @@ public class BookBuyerAgent extends Agent {
 				// Send the purchase order to the seller that provided the best offer
 				ACLMessage order = new ACLMessage(ACLMessage.ACCEPT_PROPOSAL);
 				order.addReceiver(bestSeller);
-				order.setContent(BookTitle);
+				order.setContent(booktitle);
 				order.setConversationId("book-trade");
 				order.setReplyWith("order"+System.currentTimeMillis());
 				myAgent.send(order);
@@ -224,4 +218,28 @@ public class BookBuyerAgent extends Agent {
 			return ((step == 2 && bestSeller == null) || step == 4);
 		}
 	}
+
+	
+	//*******************
+	// Taken from http://www.rickyvanrijn.nl/2017/08/29/how-to-shutdown-jade-agent-platform-programmatically/
+	private class shutdown extends OneShotBehaviour{
+		public void action() {
+			ACLMessage shutdownMessage = new ACLMessage(ACLMessage.REQUEST);
+			Codec codec = new SLCodec();
+			myAgent.getContentManager().registerLanguage(codec);
+			myAgent.getContentManager().registerOntology(JADEManagementOntology.getInstance());
+			shutdownMessage.addReceiver(myAgent.getAMS());
+			shutdownMessage.setLanguage(FIPANames.ContentLanguage.FIPA_SL);
+			shutdownMessage.setOntology(JADEManagementOntology.getInstance().getName());
+			try {
+				myAgent.getContentManager().fillContent(shutdownMessage,new Action(myAgent.getAID(), new ShutdownPlatform()));
+				myAgent.send(shutdownMessage);
+			}
+			catch (Exception e) {
+				// LOGGER.error(e);
+			}
+
+		}
+	}
 }
+	
